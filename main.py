@@ -50,8 +50,8 @@ from utils import (Dcm,
                    dice_coef,
                    save_images)
 
-from losses import (CrossEntropy)
 from post_processing import (postprocess_per_class)
+from losses import (CrossEntropy, CeAndDiceCombinedLoss, DiceLoss)
 
 datasets_params: dict[str, dict[str, Any]] = {}
 # K for the number of classes
@@ -143,7 +143,9 @@ def runTraining(args):
     net, optimizer, device, train_loader, val_loader, K = setup(args)
 
     if args.mode == "full":
-        loss_fn = CrossEntropy(idk=list(range(K)))  # Supervise both background and foreground
+        # loss_fn = CrossEntropy(idk=list(range(K)))  # Supervise both background and foreground
+        loss_fn = DiceLoss(idk=list(range(K)))
+        # loss_fn = CeAndDiceCombinedLoss(idk=list(range(K)), ce_weight=1.0, dice_weight=1.0)
     elif args.mode in ["partial"] and args.dataset == 'SEGTHOR':
         loss_fn = CrossEntropy(idk=[0, 1, 3, 4])  # Do not supervise the heart (class 2)
     else:
