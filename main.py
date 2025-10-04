@@ -51,7 +51,7 @@ from utils import (Dcm,
                    save_images)
 
 from post_processing import (postprocess_per_class)
-from losses import (CrossEntropy, CeAndDiceCombinedLoss, DiceLoss)
+from losses import (CrossEntropy, FocalDiceLoss, CeAndDiceCombinedLoss, DiceLoss, GeneralizedDiceLoss, CeGeneralisedDiceComboLoss, FocalTverskyLoss, TverskyLoss, CeTverskyCombo, WeightedCrossEntropy)
 
 datasets_params: dict[str, dict[str, Any]] = {}
 # K for the number of classes
@@ -144,8 +144,20 @@ def runTraining(args):
 
     if args.mode == "full":
         # loss_fn = CrossEntropy(idk=list(range(K)))  # Supervise both background and foreground
-        loss_fn = DiceLoss(idk=list(range(K)))
-        # loss_fn = CeAndDiceCombinedLoss(idk=list(range(K)), ce_weight=1.0, dice_weight=1.0)
+        loss_fn = WeightedCrossEntropy(idk=[0, 1, 2, 3, 4]) # performed 0.5% better
+        # loss_fn = DiceLoss(idk=list(range(K)))
+        # loss_fn = GeneralizedDiceLoss(idk=[0, 1, 2, 3, 4], smooth=1e-5)
+        # loss_fn = CeAndDiceCombinedLoss(idk=list(range(K)), ce_weight=1.0, dice_weight=1.5)
+        # loss_fn = CeGeneralisedDiceComboLoss(
+        #     idk=[0, 1, 2, 3, 4],
+        #     ce_idk=[0, 1, 2, 3, 4],
+        #     ce_weight=0.5,
+        #     dice_weight=1.0
+        # )
+        # loss_fn = FocalTverskyLoss(idk=[0, 1, 2, 3, 4], alpha=0.7, beta=0.3, gamma=0.75)
+        # loss_fn = TverskyLoss(idk=[0, 1, 2, 3, 4], alpha=0.7, beta=0.3, smooth=1.0)
+        # loss_fn = CeTverskyCombo(idk=[0, 1, 2, 3, 4], ce_weight=0.5, tversky_weight=1.0)
+        # loss_fn = FocalDiceLoss(idk=[0, 1, 2, 3, 4], gamma=2.0, focal_weight=1.0, dice_weight=1.0)
     elif args.mode in ["partial"] and args.dataset == 'SEGTHOR':
         loss_fn = CrossEntropy(idk=[0, 1, 3, 4])  # Do not supervise the heart (class 2)
     else:
