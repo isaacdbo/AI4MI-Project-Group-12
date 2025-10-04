@@ -28,6 +28,23 @@ import torch.nn.functional as F
 from torch import Tensor
 
 
+class SqueezeExcite(nn.Module):
+        def __init__(self, c, r=16):
+                super().__init__()
+                self.avg = nn.AdaptiveAvgPool2d(1)
+                # Ensure minimum of 1 channel in the bottleneck
+                mid_channels = max(1, c // r)
+                self.fc = nn.Sequential(
+                        nn.Conv2d(c, mid_channels, 1, bias=True),
+                        nn.ReLU(inplace=True),
+                        nn.Conv2d(mid_channels, c, 1, bias=True),
+                        nn.Sigmoid()
+                )
+
+        def forward(self, x):
+                return x * self.fc(self.avg(x))
+
+
 def random_weights_init(m):
         if isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
                 nn.init.xavier_normal_(m.weight.data)
@@ -56,7 +73,7 @@ def conv_block_asym(in_dim, out_dim, *, kernel_size: int):
 class BottleNeck(nn.Module):
         def __init__(self, in_dim, out_dim, projectionFactor,
                      *, dropoutRate=0.01, dilation=1,
-                     asym: bool = False, dilate_last: bool = False):
+                     asym: bool = False, dilate_last: bool = False, use_se: bool = False):
                 super().__init__()
                 self.in_dim = in_dim
                 self.out_dim = out_dim
@@ -74,6 +91,9 @@ class BottleNeck(nn.Module):
 
                 self.block2 = conv_block(mid_dim, out_dim, kernel_size=1)
 
+                self.use_se = use_se
+                self.se = SqueezeExcite(out_dim) if use_se else nn.Identity()
+
                 self.do = nn.Dropout(p=dropoutRate)
                 self.PReLU_out = nn.PReLU()
 
@@ -90,6 +110,7 @@ class BottleNeck(nn.Module):
                 b0 = self.block0(in_)
                 b1 = self.block1(b0)
                 b2 = self.block2(b1)
+                b2 = self.se(b2)  # Apply SE before residual
                 do = self.do(b2)
 
                 output = self.PReLU_out(self.conv_out(in_) + do)
@@ -177,6 +198,7 @@ class ENet(nn.Module):
                 super().__init__()
                 F: int = kwargs["factor"] if "factor" in kwargs else 4  # Projecting factor
                 K: int = kwargs["kernels"] if "kernels" in kwargs else 16  # n_kernels
+                use_se: bool = kwargs["use_se"] if "use_se" in kwargs else False  # Squeeze-and-Excitation
 
                 # from models.enet import (BottleNeck,
                 #                          BottleNeckDownSampling,
@@ -189,36 +211,36 @@ class ENet(nn.Module):
 
                 # Downsampling half
                 self.bottleneck1_0 = BottleNeckDownSampling(K, K * 4, F)
-                self.bottleneck1_1 = nn.Sequential(BottleNeck(K * 4, K * 4, F),
-                                                   BottleNeck(K * 4, K * 4, F),
-                                                   BottleNeck(K * 4, K * 4, F),
-                                                   BottleNeck(K * 4, K * 4, F))
+                self.bottleneck1_1 = nn.Sequential(BottleNeck(K * 4, K * 4, F, use_se=use_se),
+                                                   BottleNeck(K * 4, K * 4, F, use_se=use_se),
+                                                   BottleNeck(K * 4, K * 4, F, use_se=use_se),
+                                                   BottleNeck(K * 4, K * 4, F, use_se=use_se))
                 self.bottleneck2_0 = BottleNeckDownSampling(K * 4, K * 8, F)
-                self.bottleneck2_1 = nn.Sequential(BottleNeck(K * 8, K * 8, F, dropoutRate=0.1),
-                                                   BottleNeck(K * 8, K * 8, F, dilation=2),
-                                                   BottleNeck(K * 8, K * 8, F, dropoutRate=0.1, asym=True),
-                                                   BottleNeck(K * 8, K * 8, F, dilation=4),
-                                                   BottleNeck(K * 8, K * 8, F, dropoutRate=0.1),
-                                                   BottleNeck(K * 8, K * 8, F, dilation=8),
-                                                   BottleNeck(K * 8, K * 8, F, dropoutRate=0.1, asym=True),
-                                                   BottleNeck(K * 8, K * 8, F, dilation=16))
+                self.bottleneck2_1 = nn.Sequential(BottleNeck(K * 8, K * 8, F, dropoutRate=0.1, use_se=use_se),
+                                                   BottleNeck(K * 8, K * 8, F, dilation=2, use_se=use_se),
+                                                   BottleNeck(K * 8, K * 8, F, dropoutRate=0.1, asym=True, use_se=use_se),
+                                                   BottleNeck(K * 8, K * 8, F, dilation=4, use_se=use_se),
+                                                   BottleNeck(K * 8, K * 8, F, dropoutRate=0.1, use_se=use_se),
+                                                   BottleNeck(K * 8, K * 8, F, dilation=8, use_se=use_se),
+                                                   BottleNeck(K * 8, K * 8, F, dropoutRate=0.1, asym=True, use_se=use_se),
+                                                   BottleNeck(K * 8, K * 8, F, dilation=16, use_se=use_se))
 
                 # Middle operations
-                self.bottleneck3 = nn.Sequential(BottleNeck(K * 8, K * 8, F, dropoutRate=0.1),
-                                                 BottleNeck(K * 8, K * 8, F, dilation=2),
-                                                 BottleNeck(K * 8, K * 8, F, dropoutRate=0.1, asym=True),
-                                                 BottleNeck(K * 8, K * 8, F, dilation=4),
-                                                 BottleNeck(K * 8, K * 8, F, dropoutRate=0.1),
-                                                 BottleNeck(K * 8, K * 8, F, dilation=8),
-                                                 BottleNeck(K * 8, K * 8, F, dropoutRate=0.1, asym=True),
-                                                 BottleNeck(K * 8, K * 4, F, dilation=16, dilate_last=True))
+                self.bottleneck3 = nn.Sequential(BottleNeck(K * 8, K * 8, F, dropoutRate=0.1, use_se=use_se),
+                                                 BottleNeck(K * 8, K * 8, F, dilation=2, use_se=use_se),
+                                                 BottleNeck(K * 8, K * 8, F, dropoutRate=0.1, asym=True, use_se=use_se),
+                                                 BottleNeck(K * 8, K * 8, F, dilation=4, use_se=use_se),
+                                                 BottleNeck(K * 8, K * 8, F, dropoutRate=0.1, use_se=use_se),
+                                                 BottleNeck(K * 8, K * 8, F, dilation=8, use_se=use_se),
+                                                 BottleNeck(K * 8, K * 8, F, dropoutRate=0.1, asym=True, use_se=use_se),
+                                                 BottleNeck(K * 8, K * 4, F, dilation=16, dilate_last=True, use_se=use_se))
 
                 # Upsampling half
                 self.bottleneck4 = nn.Sequential(BottleNeckUpSampling(K * 8, K * 4, F),
-                                                 BottleNeck(K * 4, K * 4, F, dropoutRate=0.1),
-                                                 BottleNeck(K * 4, K, F, dropoutRate=0.1))
+                                                 BottleNeck(K * 4, K * 4, F, dropoutRate=0.1, use_se=use_se),
+                                                 BottleNeck(K * 4, K, F, dropoutRate=0.1, use_se=use_se))
                 self.bottleneck5 = nn.Sequential(BottleNeckUpSampling(K * 2, K, F),
-                                                 BottleNeck(K, K, F, dropoutRate=0.1))
+                                                 BottleNeck(K, K, F, dropoutRate=0.1, use_se=use_se))
 
                 # Final upsampling and covolutions
                 self.final = nn.Sequential(conv_block(K, K, kernel_size=3, padding=1, bias=False, stride=1),
