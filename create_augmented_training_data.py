@@ -18,6 +18,7 @@ from utils import tqdm_
 
 from sabotage import transform
 from slice_segthor import sanity_ct, sanity_gt, slice_patient
+from viewer import *
 
 # Select nifty images from the traning set
 
