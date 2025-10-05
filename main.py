@@ -51,7 +51,7 @@ from utils import (Dcm,
                    save_images)
 
 from post_processing import (postprocess_per_class)
-from losses import (CrossEntropy, FocalDiceLoss, CeAndDiceCombinedLoss, DiceLoss, FocalTverskyLoss, TverskyLoss, CeTverskyCombo, WeightedCrossEntropy)
+from losses import (CrossEntropy, FocalDiceLoss, CeAndDiceCombinedLoss, DiceLoss, FocalTverskyLoss, TverskyLoss, CeTverskyCombo, WeightedCrossEntropy, WeightedCeAndDiceCombinedLoss)
 
 datasets_params: dict[str, dict[str, Any]] = {}
 # K for the number of classes
@@ -144,7 +144,13 @@ def runTraining(args):
 
     if args.mode == "full":
         # loss_fn = CrossEntropy(idk=list(range(K)))  # Supervise both background and foreground
-        loss_fn = WeightedCrossEntropy(idk=[0, 1, 2, 3, 4]) # performed 0.5% better
+        # loss_fn = WeightedCrossEntropy(idk=[0, 1, 2, 3, 4]) # performed 0.5% better
+        loss_fn = WeightedCeAndDiceCombinedLoss(
+            idk=list(range(K)),
+            weights=[1.0, 2.0, 1.5, 1.0, 1.0],
+            ce_weight=1.0,
+            dice_weight=1.0
+        )
         # loss_fn = DiceLoss(idk=list(range(K)))
         # loss_fn = CeAndDiceCombinedLoss(idk=list(range(K)), ce_weight=1.0, dice_weight=1.5)
         # loss_fn = FocalTverskyLoss(idk=[0, 1, 2, 3, 4], alpha=0.7, beta=0.3, gamma=0.75)

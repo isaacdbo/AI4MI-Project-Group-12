@@ -71,6 +71,25 @@ class WeightedCrossEntropy:
         loss /= weighted_mask.sum() + 1e-10
 
         return loss
+    
+class WeightedCeAndDiceCombinedLoss:
+    def __init__(self, **kwargs):
+        self.idk = kwargs.get('idk', [0, 1, 2, 3, 4])
+        self.ce_weight = kwargs.get('ce_weight', 1.0)
+        self.dice_weight = kwargs.get('dice_weight', 1.0)
+        
+        weights = kwargs.get('weights', [1.0, 2.0, 1.5, 1.0, 1.0])
+        
+        self.ce_loss = WeightedCrossEntropy(idk=self.idk, weights=weights)
+        self.dice_loss = DiceLoss(idk=self.idk)
+        
+        print(f"Initialized {self.__class__.__name__} with ce_weight={self.ce_weight}, dice_weight={self.dice_weight}, class_weights={weights}")
+
+    def __call__(self, pred_softmax, weak_target):
+        ce = self.ce_loss(pred_softmax, weak_target)
+        dice = self.dice_loss(pred_softmax, weak_target)
+        
+        return self.ce_weight * ce + self.dice_weight * dice
 
 class PartialCrossEntropy(CrossEntropy):
     def __init__(self, **kwargs):
