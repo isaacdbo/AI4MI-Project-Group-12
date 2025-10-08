@@ -93,11 +93,13 @@ def norm_arr(img: np.ndarray) -> np.ndarray:
 
 def slice_special_patient(id_: str, dest_path: Path, source_path: Path, shape: tuple[int, int],
                   test_mode: bool = False) -> tuple[float, float, float]:
-    id_path: Path = source_path / ("train" if not test_mode else "test") / id_
+    id_path: Path = source_path / id_
 
-    ct_path: Path = (id_path / f"{id_}.nii.gz") if not test_mode else (source_path / "test" / f"{id_}_augmented.nii.gz")
+    ct_path: Path = (id_path / f"{id_}_augmented.nii.gz") if not test_mode else (source_path / "test" / f"{id_}_augmented.nii.gz")
     nib_obj = nib.load(str(ct_path))
     ct: np.ndarray = np.asarray(nib_obj.dataobj)
+    x, y, z = ct.shape
+    dx, dy, dz = nib_obj.header.get_zooms()
 
     gt: np.ndarray
     if not test_mode:
@@ -114,8 +116,8 @@ def slice_special_patient(id_: str, dest_path: Path, source_path: Path, shape: t
     to_slice_gt = gt
 
     for idz in range(z):
-        img_slice = resize_(to_slice_ct[:, :, idz], shape).astype(np.uint8)
-        gt_slice = resize_(to_slice_gt[:, :, idz], shape, order=0).astype(np.uint8)
+        img_slice = resize(to_slice_ct[:, :, idz], shape).astype(np.uint8)
+        gt_slice = resize(to_slice_gt[:, :, idz], shape, order=0).astype(np.uint8)
         assert img_slice.shape == gt_slice.shape
         gt_slice *= 63
         assert gt_slice.dtype == np.uint8, gt_slice.dtype
@@ -128,7 +130,7 @@ def slice_special_patient(id_: str, dest_path: Path, source_path: Path, shape: t
         assert len(arrays) == len(subfolders)
         for save_subfolder, data in zip(subfolders,
                                         arrays):
-            filename = f"{id_}_{idz:04d}.png"
+            filename = f"{id_}_{idz:04d}_augmented.png"
 
             save_path: Path = Path(dest_path, save_subfolder)
             save_path.mkdir(parents=True, exist_ok=True)
@@ -136,6 +138,7 @@ def slice_special_patient(id_: str, dest_path: Path, source_path: Path, shape: t
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=UserWarning)
                 imsave(str(save_path / filename), data)
+                print(f"Saved at {str(save_path / filename)}")
 
 def main(args: argparse.Namespace):
         source_dir: str = args.source_dir
@@ -151,31 +154,35 @@ def main(args: argparse.Namespace):
                 if f"{i:02d}" not in validation_set
         ] # I've never felt so lazy in my life
 
-        # Per patient, add 
-        for id in train_set:
-                print(f"Processing data from {id}")
-                subject = tio.Subject(
-                image=tio.ScalarImage(f"{source_dir}/{id}/{id}.nii.gz"),
-                label=tio.LabelMap(f"{source_dir}/{id}/GT_fixed.nii.gz")
-                )
+        # # Per patient, add 
+        # for id in train_set:
+        #         print(f"Processing data from {id}")
+        #         subject = tio.Subject(
+        #         image=tio.ScalarImage(f"{source_dir}/{id}/{id}.nii.gz"),
+        #         label=tio.LabelMap(f"{source_dir}/{id}/GT_fixed.nii.gz")
+        #         )
 
-                transform = tio.RandomAffine(
-                scales=(0.9, 1.1),
-                degrees=10,
-                translation=5,
-                image_interpolation='linear'
-                )
-                # TODO: there are certainly better ways to integrate it into the 
-                # system. Because the other scripts are really dependent on the file
-                # names of these patients. We'd want to avoid overwriting files when
-                # giving these to the training data...
-                augmented = transform(subject)
-                augmented.image.save(f"{dest_dir}/{id}/{id}_augmented.nii.gz")
-                augmented.label.save(f"{dest_dir}/{id}/GT_augmented.nii.gz")
-                print(f"Saved CT and GT images of {id} to {dest_dir}/{id}")
-        
+        #         transform = tio.RandomAffine(
+        #         scales=(0.9, 1.1),
+        #         degrees=10,
+        #         translation=5,
+        #         image_interpolation='linear'
+        #         )
+
+        #         # TODO: there are certainly better ways to integrate it into the 
+        #         # system. Because the other scripts are really dependent on the file
+        #         # names of these patients. We'd want to avoid overwriting files when
+        #         # giving these to the training data...
+        #         augmented = transform(subject)
+        #         augmented.image.save(f"{dest_dir}/{id}/{id}_augmented.nii.gz")
+        #         augmented.label.save(f"{dest_dir}/{id}/GT_augmented.nii.gz")
+        #         print(f"Saved CT and GT images of {id} to {dest_dir}/{id}")
+
         for id in train_set:
-              
+              print(id)
+              slice_special_patient(id, dest_dir, source_dir, [256,256])
+              print(f"Processed {id}")
+                      
 
 def get_args() -> argparse.Namespace:
         parser = argparse.ArgumentParser(description='''
