@@ -90,7 +90,8 @@ def setup(args) -> tuple[nn.Module, Any, Any, DataLoader, DataLoader, int]:
     net.init_weights()
     net.to(device)
 
-    lr = 0.0005
+    lr = 0.001 # experimented with 3 different optimizers (Adam, AdamW and SGD) and different learning rates (0.0005 and 0.001 for Adam and AdamW, 0.05 and 0.1 for SGD). 
+    # In the end, after running each combination for 3 runs and averaging the results, Adam with a lr of 0.001 performed the best.
     optimizer = torch.optim.Adam(net.parameters(), lr=lr, betas=(0.9, 0.999))
 
     # Dataset part
