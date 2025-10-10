@@ -33,6 +33,8 @@ from typing import Callable
 
 import numpy as np
 import nibabel as nib
+import SimpleITK as sitk
+
 from skimage.io import imsave
 from skimage.transform import resize
 
@@ -81,7 +83,7 @@ resize_: Callable = partial(resize, mode="constant", preserve_range=True, anti_a
 
 
 def slice_patient(id_: str, dest_path: Path, source_path: Path, shape: tuple[int, int],
-                  test_mode: bool = False) -> tuple[float, float, float]:
+                  window = None, level = None, test_mode: bool = False) -> tuple[float, float, float]:
     id_path: Path = source_path / ("train" if not test_mode else "test") / id_
 
     ct_path: Path = (id_path / f"{id_}.nii.gz") if not test_mode else (source_path / "test" / f"{id_}.nii.gz")
@@ -103,7 +105,14 @@ def slice_patient(id_: str, dest_path: Path, source_path: Path, shape: tuple[int
     else:
         gt = np.zeros_like(ct, dtype=np.uint8)
 
-    norm_ct: np.ndarray = norm_arr(ct)
+    # apply window and level to enhance contrast in ct images
+    if level and window:
+        max = level + window/2
+        min = level - window/2
+        windowed = np.clip(ct, min, max)
+        norm_ct = norm_arr(windowed)
+    else:
+        norm_ct: np.ndarray = norm_arr(ct)
 
     to_slice_ct = norm_ct
     to_slice_gt = gt
@@ -159,6 +168,8 @@ def get_splits(src_path: Path, retains: int, fold: int) -> tuple[list[str], list
 def main(args: argparse.Namespace):
     src_path: Path = Path(args.source_dir)
     dest_path: Path = Path(args.dest_dir)
+    window = args.window
+    level = args.level
 
     # Assume the clean up is done before calling the script
     assert src_path.exists()
@@ -180,7 +191,9 @@ def main(args: argparse.Namespace):
                                  dest_path=dest_mode,
                                  source_path=src_path,
                                  shape=tuple(args.shape),
-                                 test_mode=mode == 'test')
+                                 test_mode=mode == 'test', 
+                                 window=window, 
+                                 level=level)
         resolutions: list[tuple[float, float, float]]
         iterator = tqdm_(split_ids)
         match args.process:
@@ -203,6 +216,8 @@ def get_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Slicing parameters')
     parser.add_argument('--source_dir', type=str, required=True)
     parser.add_argument('--dest_dir', type=str, required=True)
+    parser.add_argument('--level', type=int, default=None)
+    parser.add_argument('--window', type=int, default=None)
 
     parser.add_argument('--shape', type=int, nargs="+", default=[256, 256])
     parser.add_argument('--retains', type=int, default=25, help="Number of retained patient for the validation data")
