@@ -86,7 +86,19 @@ def setup(args) -> tuple[nn.Module, Any, Any, DataLoader, DataLoader, int]:
     K: int = datasets_params[args.dataset]['K']
     kernels: int = datasets_params[args.dataset]['kernels'] if 'kernels' in datasets_params[args.dataset] else 8
     factor: int = datasets_params[args.dataset]['factor'] if 'factor' in datasets_params[args.dataset] else 2
-    net = datasets_params[args.dataset]['net'](1, K, kernels=kernels, factor=factor)
+
+    # Model factory: select architecture based on --arch argument
+    if args.arch == "enet":
+        net = ENet(1, K, kernels=kernels, factor=factor, use_se=False)
+    elif args.arch == "enet_se":
+        net = ENet(1, K, kernels=kernels, factor=factor, use_se=True)
+    elif args.arch == "segformer_b0":
+        from segformer_b0 import SegFormerB0
+        net = SegFormerB0(num_classes=K, in_ch=1)
+    else:
+        # Fallback to dataset default for backward compatibility
+        net = datasets_params[args.dataset]['net'](1, K, kernels=kernels, factor=factor)
+
     net.init_weights()
     net.to(device)
 
@@ -241,6 +253,8 @@ def main():
     parser.add_argument('--mode', default='full', choices=['partial', 'full'])
     parser.add_argument('--dest', type=Path, required=True,
                         help="Destination directory to save the results (predictions and weights).")
+    parser.add_argument('--arch', default='enet', choices=['enet', 'enet_se', 'segformer_b0'],
+                        help="Select model architecture")
 
     parser.add_argument('--gpu', action='store_true')
     parser.add_argument('--debug', action='store_true',

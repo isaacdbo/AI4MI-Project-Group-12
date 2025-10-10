@@ -9,3 +9,10 @@ result_folder/*
 val/
 stitched_data/
 stitch.py
+.venv/
+__pycache__/
+*.pt
+*.pkl
+runs/
+results/
+data/
