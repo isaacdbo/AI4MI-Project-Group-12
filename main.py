@@ -51,7 +51,7 @@ from utils import (Dcm,
                    save_images)
 
 from losses import (CrossEntropy)
-from post_processing import (postprocess_2d_slice_without_class_1_or_class_3)
+from post_processing import (postprocess_per_class)
 
 datasets_params: dict[str, dict[str, Any]] = {}
 # K for the number of classes
@@ -199,8 +199,9 @@ def runTraining(args):
 
                             for b in range(predicted_class.shape[0]):
                                 pred_np = predicted_class[b, 0].cpu().numpy()
-                                pred_clean = postprocess_2d_slice_without_class_1_or_class_3(pred_np)
-                                predicted_class[b, 0] = torch.from_numpy(pred_clean).to(predicted_class.device)
+                                pred_np = postprocess_per_class(pred_np)
+
+                                predicted_class[b, 0] = torch.from_numpy(pred_np).to(predicted_class.device)
 
                             mult: int = 63 if K == 5 else (255 / (K - 1))
                             save_images(predicted_class * mult,

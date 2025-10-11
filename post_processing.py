@@ -23,3 +23,31 @@ def postprocess_2d_slice_without_class_1_or_class_3(pred_slice):
             pred_clean[labeled == largest] = class_id
     
     return pred_clean
+
+def postprocess_per_class(pred_slice):
+    out = np.zeros_like(pred_slice, dtype=pred_slice.dtype)
+
+    def smooth(mask, closing_radius=1, fill=True):
+        if fill:
+            mask = binary_fill_holes(mask)
+        if closing_radius > 0:
+            mask = binary_closing(mask, structure=disk(closing_radius))
+        return mask
+
+    m1 = (pred_slice == 1)
+    out[m1] = 1
+
+    m3 = (pred_slice == 3)
+    out[m3] = 3
+
+    m2 = (pred_slice == 2)
+    if m2.any():
+        m2 = smooth(m2, closing_radius=1, fill=True)
+    out[m2] = 2
+
+    m4 = (pred_slice == 4)
+    if m4.any():
+        m4 = smooth(m4, closing_radius=1, fill=True)
+    out[m4] = 4
+
+    return out
