@@ -51,6 +51,7 @@ from utils import (Dcm,
                    save_images)
 
 from losses import (CrossEntropy)
+from post_processing import (postprocess_per_class)
 
 datasets_params: dict[str, dict[str, Any]] = {}
 # K for the number of classes
@@ -208,6 +209,13 @@ def runTraining(args):
                         with warnings.catch_warnings():
                             warnings.filterwarnings('ignore', category=UserWarning)
                             predicted_class: Tensor = probs2class(pred_probs)
+
+                            for b in range(predicted_class.shape[0]):
+                                pred_np = predicted_class[b, 0].cpu().numpy()
+                                pred_np = postprocess_per_class(pred_np)
+
+                                predicted_class[b, 0] = torch.from_numpy(pred_np).to(predicted_class.device)
+
                             mult: int = 63 if K == 5 else (255 / (K - 1))
                             save_images(predicted_class * mult,
                                         data['stems'],
