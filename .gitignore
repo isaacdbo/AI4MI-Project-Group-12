@@ -12,6 +12,7 @@ stitch.py
 .venv/
 __pycache__/
 *.pt
+!pretraining/pretrained_weights.pt
 *.pkl
 runs/
 results/

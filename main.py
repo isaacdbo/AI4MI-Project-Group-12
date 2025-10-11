@@ -59,6 +59,7 @@ datasets_params: dict[str, dict[str, Any]] = {}
 datasets_params["TOY2"] = {'K': 2, 'net': shallowCNN, 'B': 2, 'kernels': 8, 'factor': 2}
 datasets_params["SEGTHOR"] = {'K': 5, 'net': ENet, 'B': 8, 'kernels': 8, 'factor': 2}
 datasets_params["SEGTHOR_CLEAN"] = {'K': 5, 'net': ENet, 'B': 8, 'kernels': 8, 'factor': 2}
+datasets_params["PRETRAIN"] = {'K': 3, 'net': ENet, 'B': 8, 'kernels': 8, 'factor': 2}
 
 def img_transform(img):
         img = img.convert('L')
@@ -101,6 +102,31 @@ def setup(args) -> tuple[nn.Module, Any, Any, DataLoader, DataLoader, int]:
         net = datasets_params[args.dataset]['net'](1, K, kernels=kernels, factor=factor)
 
     net.init_weights()
+
+  #Inclusion of pretrained weights
+    if args.pretrained is not None:
+        print(f">> Loading pretrained weights from {args.pretrained}")
+        pretrained_dict = torch.load(args.pretrained, map_location='cpu')  # safer to load on CPU first
+        model_dict = net.state_dict()
+
+        # Filter matching keys
+        pretrained_dict = {k: v for k, v in pretrained_dict.items()
+                        if k in model_dict and v.shape == model_dict[k].shape}
+
+        model_dict.update(pretrained_dict)
+        net.load_state_dict(model_dict)
+
+        # Optional: manually transfer classifier weights
+        if 'classifier.weight' in pretrained_dict:
+            with torch.no_grad():
+                net.final[2].weight[0] = pretrained_dict['final.2.weight'][0]  # background
+                net.final[2].weight[1] = pretrained_dict['final.2.weight'][1]  # esophagus
+                net.final[2].weight[4] = pretrained_dict['final.2.weight'][2]  # aorta
+
+                # Initialize heart and bronchi
+                nn.init.xavier_uniform_(net.final[2].weight[2])
+                nn.init.xavier_uniform_(net.final[2].weight[3])
+
     net.to(device)
 
     lr = 0.001 # experimented with 3 different optimizers (Adam, AdamW and SGD) and different learning rates (0.0005 and 0.001 for Adam and AdamW, 0.05 and 0.1 for SGD). 
@@ -263,6 +289,8 @@ def main():
 
     parser.add_argument('--epochs', default=20, type=int)
     parser.add_argument('--dataset', default='TOY2', choices=datasets_params.keys())
+    parser.add_argument('--pretrained', type=Path, default=None,
+                    help="Path to pretrained weights (.pt) for finetuning.")
     parser.add_argument('--mode', default='full', choices=['partial', 'full'])
     parser.add_argument('--dest', type=Path, required=True,
                         help="Destination directory to save the results (predictions and weights).")
