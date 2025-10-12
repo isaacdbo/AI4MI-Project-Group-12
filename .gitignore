@@ -9,6 +9,11 @@ result_folder/*
 val/
 stitched_data/
 stitch.py
+<<<<<<< HEAD
+tio_test.py
+slurm/training.out
+training.sh
+=======
 .venv/
 __pycache__/
 *.pt
@@ -17,3 +22,4 @@ __pycache__/
 runs/
 results/
 data/
+>>>>>>> origin/main
