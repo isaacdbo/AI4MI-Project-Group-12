@@ -191,7 +191,7 @@ def get_args() -> argparse.Namespace:
                 and modify on the fly the identified ground truth files.''')
         parser.add_argument('--source_dir', type=Path, required=False, default="/home/scur0607/AI4MI-Project-Group-12/data/segthor_train/train")
         parser.add_argument('--train_dir', type=Path, required=False, help="Location of the train set of SEGTHOR. Used to only create augmented samples of the training data",default="/home/scur0607/AI4MI-Project-Group-12/data/SEGTHOR_CLEAN/train/img")
-        parser.add_argument('--dest_dir', type=Path, required=False, default="/home/scur0607/AI4MI-Project-Group-12/data/segthor_train/train")
+        parser.add_argument('--dest_dir', type=Path, required=False, default="/home/scur0607/AI4MI-Project-Group-12/data/SEGTHOR/train")
         args = parser.parse_args()
         
         return args

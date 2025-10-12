@@ -10,3 +10,5 @@ val/
 stitched_data/
 stitch.py
 tio_test.py
+slurm/training.out
+training.sh
