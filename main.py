@@ -171,7 +171,7 @@ def runTraining(args):
     if args.mode == "full":
         loss_fn = WeightedCeAndDiceCombinedLoss(
             idk=list(range(K)),
-            weights=[1.0, 2.0, 1.5, 1.0, 1.0],
+            weights=[1.0, 2.0, 1.5, 3.0, 1.0],
             ce_weight=1.0,
             dice_weight=1.0
         )
