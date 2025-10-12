@@ -50,7 +50,8 @@ from utils import (Dcm,
                    dice_coef,
                    save_images)
 
-from losses import (CrossEntropy)
+from post_processing import (postprocess_per_class)
+from losses import (CrossEntropy, WeightedCeAndDiceCombinedLoss)
 
 datasets_params: dict[str, dict[str, Any]] = {}
 # K for the number of classes
@@ -58,6 +59,7 @@ datasets_params: dict[str, dict[str, Any]] = {}
 datasets_params["TOY2"] = {'K': 2, 'net': shallowCNN, 'B': 2, 'kernels': 8, 'factor': 2}
 datasets_params["SEGTHOR"] = {'K': 5, 'net': ENet, 'B': 8, 'kernels': 8, 'factor': 2}
 datasets_params["SEGTHOR_CLEAN"] = {'K': 5, 'net': ENet, 'B': 8, 'kernels': 8, 'factor': 2}
+datasets_params["PRETRAIN"] = {'K': 3, 'net': ENet, 'B': 8, 'kernels': 8, 'factor': 2}
 
 def img_transform(img):
         img = img.convert('L')
@@ -86,11 +88,49 @@ def setup(args) -> tuple[nn.Module, Any, Any, DataLoader, DataLoader, int]:
     K: int = datasets_params[args.dataset]['K']
     kernels: int = datasets_params[args.dataset]['kernels'] if 'kernels' in datasets_params[args.dataset] else 8
     factor: int = datasets_params[args.dataset]['factor'] if 'factor' in datasets_params[args.dataset] else 2
-    net = datasets_params[args.dataset]['net'](1, K, kernels=kernels, factor=factor)
+
+    # Model factory: select architecture based on --arch argument
+    if args.arch == "enet":
+        net = ENet(1, K, kernels=kernels, factor=factor, use_se=False)
+    elif args.arch == "enet_se":
+        net = ENet(1, K, kernels=kernels, factor=factor, use_se=True)
+    elif args.arch == "segformer_b0":
+        from segformer_b0 import SegFormerB0
+        net = SegFormerB0(num_classes=K, in_ch=1)
+    else:
+        # Fallback to dataset default for backward compatibility
+        net = datasets_params[args.dataset]['net'](1, K, kernels=kernels, factor=factor)
+
     net.init_weights()
+
+  #Inclusion of pretrained weights
+    if args.pretrained is not None:
+        print(f">> Loading pretrained weights from {args.pretrained}")
+        pretrained_dict = torch.load(args.pretrained, map_location='cpu')  # safer to load on CPU first
+        model_dict = net.state_dict()
+
+        # Filter matching keys
+        pretrained_dict = {k: v for k, v in pretrained_dict.items()
+                        if k in model_dict and v.shape == model_dict[k].shape}
+
+        model_dict.update(pretrained_dict)
+        net.load_state_dict(model_dict)
+
+        # Optional: manually transfer classifier weights
+        if 'classifier.weight' in pretrained_dict:
+            with torch.no_grad():
+                net.final[2].weight[0] = pretrained_dict['final.2.weight'][0]  # background
+                net.final[2].weight[1] = pretrained_dict['final.2.weight'][1]  # esophagus
+                net.final[2].weight[4] = pretrained_dict['final.2.weight'][2]  # aorta
+
+                # Initialize heart and bronchi
+                nn.init.xavier_uniform_(net.final[2].weight[2])
+                nn.init.xavier_uniform_(net.final[2].weight[3])
+
     net.to(device)
 
-    lr = 0.0005
+    lr = 0.001 # experimented with 3 different optimizers (Adam, AdamW and SGD) and different learning rates (0.0005 and 0.001 for Adam and AdamW, 0.05 and 0.1 for SGD). 
+    # In the end, after running each combination for 3 runs and averaging the results, Adam with a lr of 0.001 performed the best.
     optimizer = torch.optim.Adam(net.parameters(), lr=lr, betas=(0.9, 0.999))
 
     # Dataset part
@@ -129,7 +169,12 @@ def runTraining(args):
     net, optimizer, device, train_loader, val_loader, K = setup(args)
 
     if args.mode == "full":
-        loss_fn = CrossEntropy(idk=list(range(K)))  # Supervise both background and foreground
+        loss_fn = WeightedCeAndDiceCombinedLoss(
+            idk=list(range(K)),
+            weights=[1.0, 2.0, 1.5, 3.0, 1.0],
+            ce_weight=1.0,
+            dice_weight=1.0
+        )
     elif args.mode in ["partial"] and args.dataset == 'SEGTHOR':
         loss_fn = CrossEntropy(idk=[0, 1, 3, 4])  # Do not supervise the heart (class 2)
     else:
@@ -195,6 +240,13 @@ def runTraining(args):
                         with warnings.catch_warnings():
                             warnings.filterwarnings('ignore', category=UserWarning)
                             predicted_class: Tensor = probs2class(pred_probs)
+
+                            for b in range(predicted_class.shape[0]):
+                                pred_np = predicted_class[b, 0].cpu().numpy()
+                                pred_np = postprocess_per_class(pred_np)
+
+                                predicted_class[b, 0] = torch.from_numpy(pred_np).to(predicted_class.device)
+
                             mult: int = 63 if K == 5 else (255 / (K - 1))
                             save_images(predicted_class * mult,
                                         data['stems'],
@@ -237,9 +289,13 @@ def main():
 
     parser.add_argument('--epochs', default=20, type=int)
     parser.add_argument('--dataset', default='TOY2', choices=datasets_params.keys())
+    parser.add_argument('--pretrained', type=Path, default=None,
+                    help="Path to pretrained weights (.pt) for finetuning.")
     parser.add_argument('--mode', default='full', choices=['partial', 'full'])
     parser.add_argument('--dest', type=Path, required=True,
                         help="Destination directory to save the results (predictions and weights).")
+    parser.add_argument('--arch', default='enet', choices=['enet', 'enet_se', 'segformer_b0'],
+                        help="Select model architecture")
 
     parser.add_argument('--gpu', action='store_true')
     parser.add_argument('--debug', action='store_true',
