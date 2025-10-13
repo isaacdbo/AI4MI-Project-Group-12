@@ -48,7 +48,7 @@ def ct_gt_augmentor():
                 
                 # Inverse the GT mask (label)
                 transform(
-                        "GT_fixed.nii.gz",
+                        "GT.nii.gz",
                         inversed_dir,
                         inversed_dir + "GT_inversed.nii.gz",
                         K,
@@ -80,7 +80,7 @@ def axial_slicer():
 def saggital_slicer():
         pass
 
-def norm_arr(img: np.ndarray) -> np.ndarray:
+def norm_arr(img: np.ndarray):
     casted = img.astype(np.float32)
     shifted = casted - casted.min()
     norm = shifted / shifted.max()
@@ -110,14 +110,19 @@ def slice_special_patient(id_: str, dest_path: Path, source_path: Path, shape: t
     else:
         gt = np.zeros_like(ct, dtype=np.uint8)
 
-    norm_ct: np.ndarray = norm_arr(ct)
+    window = 500
+    level = 50
+    max_val = level + window/2
+    min_val = level - window/2
+    windowed = np.clip(ct, min_val, max_val)
+    norm_ct: np.ndarray = norm_arr(windowed)
 
     to_slice_ct = norm_ct
     to_slice_gt = gt
 
     for idz in range(z):
-        img_slice = resize(to_slice_ct[:, :, idz], shape).astype(np.uint8)
-        gt_slice = resize(to_slice_gt[:, :, idz], shape, order=0).astype(np.uint8)
+        img_slice = resize(to_slice_ct[:, :, idz], shape, preserve_range=True, anti_aliasing=False).astype(np.uint8)
+        gt_slice = resize(to_slice_gt[:, :, idz], shape, order=0, preserve_range=True, anti_aliasing=False).astype(np.uint8)
         assert img_slice.shape == gt_slice.shape
         gt_slice *= 63
         assert gt_slice.dtype == np.uint8, gt_slice.dtype
@@ -141,9 +146,9 @@ def slice_special_patient(id_: str, dest_path: Path, source_path: Path, shape: t
                 print(f"Saved at {str(save_path / filename)}")
 
 def main(args: argparse.Namespace):
-        source_dir: str = args.source_dir
-        train_dir: str = args.train_dir
-        dest_dir: str = args.dest_dir
+        source_dir: Path = args.source_dir
+        train_dir: Path = args.train_dir
+        dest_dir: Path = args.dest_dir
 
         # Get id list of patient in train dataset
         # ids: list[str] = sorted(map_(lambda p: p.name, (train_dir / 'train').glob('*')))
@@ -154,29 +159,25 @@ def main(args: argparse.Namespace):
                 if f"{i:02d}" not in validation_set
         ] # I've never felt so lazy in my life
 
-        # # Per patient, add 
-        # for id in train_set:
-        #         print(f"Processing data from {id}")
-        #         subject = tio.Subject(
-        #         image=tio.ScalarImage(f"{source_dir}/{id}/{id}.nii.gz"),
-        #         label=tio.LabelMap(f"{source_dir}/{id}/GT_fixed.nii.gz")
-        #         )
+        # Per patient, add 
+        for id in train_set:
+                print(f"Processing data from {id}")
+                subject = tio.Subject(
+                image=tio.ScalarImage(f"{source_dir}/{id}/{id}.nii.gz"),
+                label=tio.LabelMap(f"{source_dir}/{id}/GT.nii.gz")
+                )
 
-        #         transform = tio.RandomAffine(
-        #         scales=(0.9, 1.1),
-        #         degrees=10,
-        #         translation=5,
-        #         image_interpolation='linear'
-        #         )
+                transform = tio.RandomAffine(
+                scales=(0.9, 1.1),
+                degrees=10,
+                translation=5,
+                image_interpolation='linear'
+                )
 
-        #         # TODO: there are certainly better ways to integrate it into the 
-        #         # system. Because the other scripts are really dependent on the file
-        #         # names of these patients. We'd want to avoid overwriting files when
-        #         # giving these to the training data...
-        #         augmented = transform(subject)
-        #         augmented.image.save(f"{dest_dir}/{id}/{id}_augmented.nii.gz")
-        #         augmented.label.save(f"{dest_dir}/{id}/GT_augmented.nii.gz")
-        #         print(f"Saved CT and GT images of {id} to {dest_dir}/{id}")
+                augmented = transform(subject)
+                augmented.image.save(f"{source_dir}/{id}/{id}_augmented.nii.gz")
+                augmented.label.save(f"{source_dir}/{id}/GT_augmented.nii.gz")
+                print(f"Saved CT and GT images of {id} to {source_dir}/{id}")
 
         for id in train_set:
               print(id)
@@ -189,9 +190,9 @@ def get_args() -> argparse.Namespace:
                 Sabotage params. Will copy all nifti from source to dest dir
                 (including the scans),
                 and modify on the fly the identified ground truth files.''')
-        parser.add_argument('--source_dir', type=Path, required=False, default="/home/scur0607/AI4MI-Project-Group-12/data/segthor_train/train")
-        parser.add_argument('--train_dir', type=Path, required=False, help="Location of the train set of SEGTHOR. Used to only create augmented samples of the training data",default="/home/scur0607/AI4MI-Project-Group-12/data/SEGTHOR_CLEAN/train/img")
-        parser.add_argument('--dest_dir', type=Path, required=False, default="/home/scur0607/AI4MI-Project-Group-12/data/SEGTHOR/train")
+        parser.add_argument('--source_dir', type=Path, required=False, default="data/segthor_fixed/train")
+        parser.add_argument('--train_dir', type=Path, required=False, help="Location of the train set of SEGTHOR. Used to only create augmented samples of the training data",default="data/SEGTHOR_CLEAN/train/img")
+        parser.add_argument('--dest_dir', type=Path, required=False, default="data/SEGTHOR_AUGMENTED/train")
         args = parser.parse_args()
         
         return args
